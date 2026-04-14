@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Atvero Deployer — onboarding</title>
+    <style>
+      :root {
+        --bg: #f6f7f9;
+        --fg: #1a1d21;
+        --muted: #5a6775;
+        --accent: #0b5fff;
+        --border: #d8dde3;
+        --ok: #127a2b;
+        --err: #b3261e;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+        margin: 0;
+        padding: 2rem 1rem;
+        line-height: 1.5;
+      }
+      main {
+        max-width: 640px;
+        margin: 0 auto;
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 2rem;
+      }
+      h1 {
+        margin-top: 0;
+        font-size: 1.4rem;
+      }
+      h2 {
+        font-size: 1.1rem;
+        margin-top: 1.5rem;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      button {
+        background: var(--accent);
+        color: #fff;
+        border: 0;
+        padding: 0.65rem 1.2rem;
+        border-radius: 6px;
+        font-size: 1rem;
+        cursor: pointer;
+      }
+      button[disabled] {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      code,
+      pre {
+        background: #f0f2f5;
+        border-radius: 4px;
+        padding: 0 0.3em;
+        font-family: SFMono-Regular, Menlo, monospace;
+        font-size: 0.9em;
+      }
+      pre {
+        padding: 0.75rem;
+        overflow-x: auto;
+        white-space: pre-wrap;
+      }
+      .panel {
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 1rem;
+        margin: 1rem 0;
+        background: #fafbfc;
+      }
+      .panel > div {
+        margin: 0.25rem 0;
+      }
+      .ok {
+        color: var(--ok);
+      }
+      .err {
+        color: var(--err);
+      }
+      label {
+        display: block;
+        font-weight: 600;
+        margin-top: 0.75rem;
+        font-size: 0.9rem;
+      }
+      input[type="url"] {
+        width: 100%;
+        padding: 0.5rem;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        font-size: 1rem;
+        font-family: SFMono-Regular, Menlo, monospace;
+      }
+      .hidden {
+        display: none;
+      }
+      a {
+        color: var(--accent);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Grant Atvero Deployer access to your app catalog</h1>
+      <p class="muted">
+        This page grants the <strong>Atvero Deployer</strong> Entra application
+        <code>FullControl</code> on a single SharePoint site — your app catalog — so
+        Atvero can publish SPFx updates to your tenant automatically. It does not
+        grant access to any other site or data.
+      </p>
+
+      <section id="intro">
+        <label for="siteUrl">App catalog site URL</label>
+        <input
+          id="siteUrl"
+          type="url"
+          placeholder="https://contoso.sharepoint.com/sites/apps"
+          autocomplete="off"
+        />
+        <p class="muted" style="margin-top: 0.5rem; font-size: 0.9rem">
+          Atvero usually pre-fills this for you via the link we sent. Check it's
+          correct before continuing.
+        </p>
+
+        <p style="margin-top: 1.5rem">
+          <button id="btnGrant">Sign in and grant access</button>
+        </p>
+        <p class="muted" style="font-size: 0.85rem">
+          You'll be asked to sign in as a SharePoint administrator. Your
+          credentials stay with Microsoft — Atvero never sees them.
+        </p>
+      </section>
+
+      <section id="result" class="hidden"></section>
+    </main>
+
+    <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+    <script>
+      // ---- CONFIG ----------------------------------------------------------
+      // Client ID of the Atvero PIM Entra app registration. This app must
+      // have a "Single-page application" platform configured with this page's
+      // URL as a redirect URI. Delegated Microsoft Graph Sites.FullControl.All
+      // must be consented (which is already the case for existing customers).
+      const PIM_APP_CLIENT_ID = "REPLACE_WITH_PIM_APP_CLIENT_ID";
+
+      // Client ID of the Atvero Deployer app — the app being granted access
+      // to the customer's app catalog site.
+      const DEPLOYER_APP_ID = "REPLACE_WITH_DEPLOYER_APP_ID";
+      const DEPLOYER_APP_NAME = "Atvero Deployer";
+
+      // Where to email the final details.
+      const ATVERO_EMAIL = "onboarding@atvero.com";
+      // ----------------------------------------------------------------------
+
+      const qs = new URLSearchParams(location.search);
+      const siteInput = document.getElementById("siteUrl");
+      const resultEl = document.getElementById("result");
+      const introEl = document.getElementById("intro");
+      const btn = document.getElementById("btnGrant");
+
+      if (qs.get("site")) siteInput.value = qs.get("site");
+
+      const msalInstance = new msal.PublicClientApplication({
+        auth: {
+          clientId: PIM_APP_CLIENT_ID,
+          // /common so any tenant's admin can sign in.
+          authority: "https://login.microsoftonline.com/common",
+          redirectUri: location.origin + location.pathname,
+        },
+        cache: { cacheLocation: "sessionStorage" },
+      });
+
+      // Small DOM helper — build elements without touching innerHTML.
+      function el(tag, attrs, children) {
+        const node = document.createElement(tag);
+        if (attrs) {
+          for (const [k, v] of Object.entries(attrs)) {
+            if (k === "class") node.className = v;
+            else if (k === "style") node.setAttribute("style", v);
+            else if (k.startsWith("on") && typeof v === "function")
+              node.addEventListener(k.slice(2), v);
+            else node.setAttribute(k, v);
+          }
+        }
+        for (const c of [].concat(children || [])) {
+          if (c == null) continue;
+          node.appendChild(
+            typeof c === "string" ? document.createTextNode(c) : c,
+          );
+        }
+        return node;
+      }
+
+      function replaceChildren(parent, ...nodes) {
+        while (parent.firstChild) parent.removeChild(parent.firstChild);
+        for (const n of nodes) parent.appendChild(n);
+      }
+
+      function showError(message, detail) {
+        introEl.classList.add("hidden");
+        resultEl.classList.remove("hidden");
+        const tryAgain = el(
+          "a",
+          { href: location.pathname + location.search },
+          "Try again",
+        );
+        const children = [
+          el("h2", { class: "err" }, "Something went wrong"),
+          el("p", null, message),
+        ];
+        if (detail) children.push(el("pre", null, detail));
+        children.push(el("p", null, [tryAgain]));
+        replaceChildren(resultEl, ...children);
+      }
+
+      function parseSiteUrl(input) {
+        const url = new URL(input);
+        const hostname = url.hostname;
+        const path = url.pathname.replace(/\/$/, "");
+        if (!path || path === "/") {
+          throw new Error(
+            "Site URL must include a path, e.g. https://contoso.sharepoint.com/sites/apps",
+          );
+        }
+        return { hostname, path };
+      }
+
+      async function graph(token, method, url, body) {
+        const res = await fetch("https://graph.microsoft.com/v1.0" + url, {
+          method,
+          headers: {
+            Authorization: "Bearer " + token,
+            "Content-Type": "application/json",
+          },
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        const text = await res.text();
+        if (!res.ok) {
+          throw new Error(`Graph ${method} ${url} → ${res.status}: ${text}`);
+        }
+        return text ? JSON.parse(text) : null;
+      }
+
+      async function resolveSiteId(token, siteUrl) {
+        const { hostname, path } = parseSiteUrl(siteUrl);
+        const data = await graph(
+          token,
+          "GET",
+          `/sites/${encodeURIComponent(hostname)}:${path}`,
+        );
+        return data.id;
+      }
+
+      async function grantPermission(token, siteId) {
+        return graph(token, "POST", `/sites/${siteId}/permissions`, {
+          roles: ["fullControl"],
+          grantedToIdentities: [
+            {
+              application: {
+                id: DEPLOYER_APP_ID,
+                displayName: DEPLOYER_APP_NAME,
+              },
+            },
+          ],
+        });
+      }
+
+      function showSuccess(account, siteUrl) {
+        introEl.classList.add("hidden");
+        resultEl.classList.remove("hidden");
+
+        const tenantId = account.tenantId || account.idTokenClaims?.tid || "";
+        const domain = (account.username || "").split("@")[1] || "";
+
+        const body = encodeURIComponent(
+          `Hi Atvero,\n\nOur SharePoint admin has granted Atvero Deployer access. Registry details:\n\n` +
+            `Tenant ID:       ${tenantId}\n` +
+            `Tenant domain:   ${domain}\n` +
+            `App catalog URL: ${siteUrl}\n\n` +
+            `Please enrol us for SPFx auto-deploys.\n`,
+        );
+        const subject = encodeURIComponent(
+          `Atvero Deployer onboarding — ${domain}`,
+        );
+        const mailto = `mailto:${ATVERO_EMAIL}?subject=${subject}&body=${body}`;
+
+        const panel = el("div", { class: "panel" }, [
+          el("div", null, [
+            el("strong", null, "Tenant ID: "),
+            el("code", null, tenantId),
+          ]),
+          el("div", null, [
+            el("strong", null, "Tenant domain: "),
+            el("code", null, domain),
+          ]),
+          el("div", null, [
+            el("strong", null, "App catalog URL: "),
+            el("code", null, siteUrl),
+          ]),
+        ]);
+
+        const emailLink = el(
+          "a",
+          { href: mailto },
+          [el("button", null, "Compose email to Atvero")],
+        );
+
+        replaceChildren(
+          resultEl,
+          el("h2", { class: "ok" }, "✅ Access granted"),
+          el("p", null, [
+            el("strong", null, "Atvero Deployer"),
+            " now has FullControl on ",
+            el("code", null, siteUrl),
+            " and on no other site.",
+          ]),
+          el("h2", null, "One last step"),
+          el(
+            "p",
+            null,
+            "Please email these details to Atvero so we can enrol you for automatic updates:",
+          ),
+          panel,
+          el("p", null, [emailLink]),
+          el(
+            "p",
+            {
+              class: "muted",
+              style: "font-size: 0.85rem; margin-top: 2rem",
+            },
+            [
+              "You can revoke access at any time by running ",
+              el("code", null, "Revoke-PnPAzureADAppSitePermission"),
+              " or by removing the permission from the site in SharePoint admin.",
+            ],
+          ),
+        );
+      }
+
+      btn.addEventListener("click", async () => {
+        const siteUrl = siteInput.value.trim();
+        if (!siteUrl) {
+          siteInput.focus();
+          return;
+        }
+        try {
+          parseSiteUrl(siteUrl);
+        } catch (e) {
+          showError(e.message);
+          return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = "Signing in…";
+
+        try {
+          await msalInstance.initialize();
+          const login = await msalInstance.loginPopup({
+            scopes: ["https://graph.microsoft.com/Sites.FullControl.All"],
+            prompt: "select_account",
+          });
+
+          const account = login.account;
+          msalInstance.setActiveAccount(account);
+
+          const tokenRes = await msalInstance.acquireTokenSilent({
+            account,
+            scopes: ["https://graph.microsoft.com/Sites.FullControl.All"],
+          });
+
+          btn.textContent = "Granting…";
+          const siteId = await resolveSiteId(tokenRes.accessToken, siteUrl);
+          await grantPermission(tokenRes.accessToken, siteId);
+          showSuccess(account, siteUrl);
+        } catch (err) {
+          console.error(err);
+          showError(
+            "Couldn't complete the grant.",
+            err?.message || String(err),
+          );
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "Sign in and grant access";
+        }
+      });
+    </script>
+  </body>
+</html>
