@@ -136,34 +136,20 @@
           Approves the Atvero Deployer application in your tenant so it can
           authenticate at all. This grants it no data access on its own —
           step 2 is what actually gives it permission to use your app catalog.
+          Opens in a new tab; close the tab when Microsoft confirms.
         </p>
         <p>
-          <button id="btnConsent">Start consent (step 1)</button>
-        </p>
-      </section>
-
-      <section id="stepTwo" class="hidden">
-        <h2 class="ok">✅ Step 1 complete</h2>
-        <p>
-          Atvero Deployer is now registered in your tenant. One more step:
-          grant it <code>FullControl</code> on just your app catalog site.
+          <button id="btnConsent">Open admin consent (step 1)</button>
         </p>
 
-        <div class="panel">
-          <div>
-            <strong>Tenant:</strong> <code id="tenantOut"></code>
-          </div>
-          <div>
-            <strong>Site:</strong> <code id="siteOut"></code>
-          </div>
-        </div>
-
+        <h2>Step 2 — Grant site permission</h2>
+        <p class="muted">
+          Only click this <strong>after</strong> step 1 has completed. You'll
+          sign in as a SharePoint administrator; your credentials stay with
+          Microsoft.
+        </p>
         <p>
           <button id="btnGrant">Sign in and grant site access (step 2)</button>
-        </p>
-        <p class="muted" style="font-size: 0.85rem">
-          You'll sign in as a SharePoint administrator. Your credentials stay
-          with Microsoft — Atvero never sees them.
         </p>
       </section>
 
@@ -192,61 +178,25 @@
       const siteInput = document.getElementById("siteUrl");
       const resultEl = document.getElementById("result");
       const introEl = document.getElementById("intro");
-      const stepTwoEl = document.getElementById("stepTwo");
       const btnConsent = document.getElementById("btnConsent");
       const btn = document.getElementById("btnGrant");
 
-      // Base URL of this page, without filename or query string —
-      // e.g. https://atvero.github.io/atvero-onboarding/
-      const BASE_URL = location.href
+      // Must match the SPA redirect URI registered on the PIM app.
+      const REDIRECT_URI = location.href
         .replace(/[?#].*$/, "")
         .replace(/[^/]*$/, "");
 
-      // MSAL (step 2) redirects back to BASE_URL — this must match the SPA
-      // redirect URI registered on the PIM app.
-      const REDIRECT_URI = BASE_URL;
-
-      // Admin-consent (step 1) redirects to consent-return.html (a tiny
-      // forwarder) so the Deployer app's Web redirect URI can be distinct
-      // from the PIM app's SPA redirect URI.
-      const CONSENT_RETURN_URI = BASE_URL + "consent-return.html";
-
       if (qs.get("site")) siteInput.value = qs.get("site");
 
-      // If we're returning from the admin-consent redirect, skip step 1
-      // and jump straight to the site-grant UI, scoped to that tenant.
-      const returningConsent =
-        qs.get("admin_consent") === "True" && qs.get("tenant");
-      const adminConsentError = qs.get("error");
-      let consentedTenantId = null;
-      let savedSiteUrl = null;
-
-      if (returningConsent) {
-        consentedTenantId = qs.get("tenant");
-        try {
-          const state = JSON.parse(
-            atob(decodeURIComponent(qs.get("state") || "")),
-          );
-          savedSiteUrl = state?.site || "";
-        } catch {
-          savedSiteUrl = "";
-        }
-        introEl.classList.add("hidden");
-        stepTwoEl.classList.remove("hidden");
-        document.getElementById("tenantOut").textContent = consentedTenantId;
-        document.getElementById("siteOut").textContent = savedSiteUrl;
-      }
-
-      function buildMsal(authority) {
-        return new msal.PublicClientApplication({
-          auth: {
-            clientId: PIM_APP_CLIENT_ID,
-            authority,
-            redirectUri: REDIRECT_URI,
-          },
-          cache: { cacheLocation: "sessionStorage" },
-        });
-      }
+      const msalInstance = new msal.PublicClientApplication({
+        auth: {
+          clientId: PIM_APP_CLIENT_ID,
+          // /common so any tenant's admin can sign in.
+          authority: "https://login.microsoftonline.com/common",
+          redirectUri: REDIRECT_URI,
+        },
+        cache: { cacheLocation: "sessionStorage" },
+      });
 
       // Small DOM helper — build elements without touching innerHTML.
       function el(tag, attrs, children) {
@@ -415,10 +365,21 @@
         );
       }
 
-      // Step 1: kick off the admin-consent redirect flow for the Deployer
-      // app. On success, Microsoft redirects back to this page with
-      // ?admin_consent=True&tenant=<tid>&state=<our state>.
+      // Step 1: open the Deployer-app admin-consent URL in a new tab. No
+      // redirect_uri, so Microsoft shows its own success page; the admin
+      // closes the tab and returns here for step 2.
       btnConsent.addEventListener("click", () => {
+        const url =
+          "https://login.microsoftonline.com/organizations/adminconsent" +
+          `?client_id=${encodeURIComponent(DEPLOYER_APP_ID)}`;
+        window.open(url, "_blank", "noopener");
+      });
+
+      // Step 2: sign in as the tenant admin, use their delegated Graph
+      // token to grant the Deployer app FullControl on the app catalog
+      // site only. The tenantId comes from the signed-in account — so
+      // whichever tenant they sign into is the one we grant in.
+      btn.addEventListener("click", async () => {
         const siteUrl = siteInput.value.trim();
         if (!siteUrl) {
           siteInput.focus();
@@ -430,32 +391,11 @@
           showError(e.message);
           return;
         }
-        const state = encodeURIComponent(
-          btoa(JSON.stringify({ site: siteUrl })),
-        );
-        const url =
-          "https://login.microsoftonline.com/organizations/adminconsent" +
-          `?client_id=${encodeURIComponent(DEPLOYER_APP_ID)}` +
-          `&redirect_uri=${encodeURIComponent(CONSENT_RETURN_URI)}` +
-          `&state=${state}`;
-        location.href = url;
-      });
 
-      // Step 2: sign in as the tenant admin (in the same tenant that just
-      // consented), use their delegated Graph token to grant the Deployer
-      // app FullControl on the app catalog site only.
-      btn.addEventListener("click", async () => {
-        if (!consentedTenantId || !savedSiteUrl) {
-          showError("Missing tenant or site from step 1. Please try again.");
-          return;
-        }
         btn.disabled = true;
         btn.textContent = "Signing in…";
 
         try {
-          const msalInstance = buildMsal(
-            `https://login.microsoftonline.com/${consentedTenantId}`,
-          );
           await msalInstance.initialize();
           const login = await msalInstance.loginPopup({
             scopes: ["https://graph.microsoft.com/Sites.FullControl.All"],
@@ -471,9 +411,9 @@
           });
 
           btn.textContent = "Granting…";
-          const siteId = await resolveSiteId(tokenRes.accessToken, savedSiteUrl);
+          const siteId = await resolveSiteId(tokenRes.accessToken, siteUrl);
           await grantPermission(tokenRes.accessToken, siteId);
-          showSuccess(account, savedSiteUrl);
+          showSuccess(account, siteUrl);
         } catch (err) {
           console.error(err);
           showError(
@@ -485,13 +425,6 @@
           btn.textContent = "Sign in and grant site access (step 2)";
         }
       });
-
-      if (adminConsentError) {
-        showError(
-          "Admin consent was not completed.",
-          qs.get("error_description") || adminConsentError,
-        );
-      }
     </script>
   </body>
 </html>
