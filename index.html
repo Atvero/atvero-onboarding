@@ -196,7 +196,20 @@
       const btnConsent = document.getElementById("btnConsent");
       const btn = document.getElementById("btnGrant");
 
-      const REDIRECT_URI = location.origin + location.pathname;
+      // Base URL of this page, without filename or query string —
+      // e.g. https://atvero.github.io/atvero-onboarding/
+      const BASE_URL = location.href
+        .replace(/[?#].*$/, "")
+        .replace(/[^/]*$/, "");
+
+      // MSAL (step 2) redirects back to BASE_URL — this must match the SPA
+      // redirect URI registered on the PIM app.
+      const REDIRECT_URI = BASE_URL;
+
+      // Admin-consent (step 1) redirects to consent-return.html (a tiny
+      // forwarder) so the Deployer app's Web redirect URI can be distinct
+      // from the PIM app's SPA redirect URI.
+      const CONSENT_RETURN_URI = BASE_URL + "consent-return.html";
 
       if (qs.get("site")) siteInput.value = qs.get("site");
 
@@ -423,7 +436,7 @@
         const url =
           "https://login.microsoftonline.com/organizations/adminconsent" +
           `?client_id=${encodeURIComponent(DEPLOYER_APP_ID)}` +
-          `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
+          `&redirect_uri=${encodeURIComponent(CONSENT_RETURN_URI)}` +
           `&state=${state}`;
         location.href = url;
       });
