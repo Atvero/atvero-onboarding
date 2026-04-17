@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Atvero Deployer — onboarding</title>
+    <title>CMap PIM — deployment onboarding</title>
     <style>
       :root {
         --bg: #f6f7f9;
@@ -110,11 +110,11 @@
   </head>
   <body>
     <main>
-      <h1>Grant Atvero Deployer access to your app catalog</h1>
+      <h1>Grant CMap PIM SPFx Deployer access to your app catalog</h1>
       <p class="muted">
-        This page grants the <strong>Atvero Deployer</strong> Entra application
+        This page grants the <strong>CMap PIM SPFx Deployer</strong> Entra application
         <code>FullControl</code> on a single SharePoint site — your app catalog — so
-        Atvero can publish SPFx updates to your tenant automatically. It does not
+        CMap PIM can publish SPFx updates to your tenant automatically. It does not
         grant access to any other site or data.
       </p>
 
@@ -127,13 +127,13 @@
           autocomplete="off"
         />
         <p class="muted" style="margin-top: 0.5rem; font-size: 0.9rem">
-          Atvero usually pre-fills this for you via the link we sent. Check it's
+          CMap PIM usually pre-fills this for you via the link we sent. Check it's
           correct before continuing.
         </p>
 
-        <h2>Step 1 — Consent to the Atvero Deployer app</h2>
+        <h2>Step 1 — Consent to the CMap PIM SPFx Deployer app</h2>
         <p class="muted">
-          Approves the Atvero Deployer application in your tenant so it can
+          Approves the CMap PIM SPFx Deployer application in your tenant so it can
           authenticate at all. This grants it no data access on its own —
           step 2 is what actually gives it permission to use your app catalog.
         </p>
@@ -145,7 +145,7 @@
       <section id="stepTwo" class="hidden">
         <h2 class="ok">✅ Step 1 complete</h2>
         <p>
-          Atvero Deployer is now registered in your tenant. One more step:
+          CMap PIM SPFx Deployer is now registered in your tenant. One more step:
           grant it <code>FullControl</code> on just your app catalog site.
         </p>
 
@@ -163,7 +163,7 @@
         </p>
         <p class="muted" style="font-size: 0.85rem">
           You'll sign in as a SharePoint administrator. Your credentials stay
-          with Microsoft — Atvero never sees them.
+          with Microsoft — CMap PIM never sees them.
         </p>
       </section>
 
@@ -173,7 +173,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.28.0/lib/msal-browser.min.js"></script>
     <script>
       // ---- CONFIG ----------------------------------------------------------
-      // Client ID of the Atvero PIM Entra app registration. This app must
+      // Client ID of the CMap PIM Entra app registration. This app must
       // have a "Single-page application" platform configured with this page's
       // URL as a redirect URI. Delegated Microsoft Graph Sites.FullControl.All
       // must be consented (which is already the case for existing customers).
@@ -355,7 +355,7 @@
           if (!roles.includes("fullcontrol")) {
             throw new Error(
               `Grant created (id: ${permId}) but roles are [${roles}] instead of [fullcontrol]. ` +
-                "Please contact Atvero support.",
+                "Please contact CMap PIM support.",
             );
           }
         }
@@ -370,14 +370,14 @@
         const domain = (account.username || "").split("@")[1] || "";
 
         const body = encodeURIComponent(
-          `Hi Atvero,\n\nOur SharePoint admin has granted Atvero Deployer access. Registry details:\n\n` +
+          `Hi CMap PIM,\n\nOur SharePoint admin has granted CMap PIM SPFx Deployer access. Registry details:\n\n` +
             `Tenant ID:       ${tenantId}\n` +
             `Tenant domain:   ${domain}\n` +
             `App catalog URL: ${siteUrl}\n\n` +
             `Please enrol us for SPFx auto-deploys.\n`,
         );
         const subject = encodeURIComponent(
-          `Atvero Deployer onboarding — ${domain}`,
+          `CMap PIM SPFx Deployer onboarding — ${domain}`,
         );
         const mailto = `mailto:${ATVERO_EMAIL}?subject=${subject}&body=${body}`;
 
@@ -399,14 +399,14 @@
         const emailLink = el(
           "a",
           { href: mailto },
-          [el("button", null, "Compose email to Atvero")],
+          [el("button", null, "Compose email to CMap PIM")],
         );
 
         replaceChildren(
           resultEl,
           el("h2", { class: "ok" }, "✅ Access granted"),
           el("p", null, [
-            el("strong", null, "Atvero Deployer"),
+            el("strong", null, "CMap PIM SPFx Deployer"),
             " now has FullControl on ",
             el("code", null, siteUrl),
             " and on no other site.",
@@ -415,7 +415,7 @@
           el(
             "p",
             null,
-            "Please email these details to Atvero so we can enrol you for automatic updates:",
+            "Please email these details to CMap PIM so we can enrol you for automatic updates:",
           ),
           panel,
           el("p", null, [emailLink]),
