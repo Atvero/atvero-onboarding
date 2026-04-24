@@ -185,7 +185,7 @@
       const DEPLOYER_APP_NAME = "CMap PIM SPFx Deployer";
 
       // Where to email the final details.
-      const ATVERO_EMAIL = "marcus.roberts@cmap.io";
+      const ATVERO_EMAIL = "Atverosupport@atvero.io";
       // ----------------------------------------------------------------------
 
       const qs = new URLSearchParams(location.search);
@@ -369,17 +369,17 @@
         const tenantId = account.tenantId || account.idTokenClaims?.tid || "";
         const domain = (account.username || "").split("@")[1] || "";
 
-        const body = encodeURIComponent(
+        const subject = `CMap PIM SPFx Deployer onboarding — ${domain}`;
+        const body =
           `Hi CMap PIM,\n\nOur SharePoint admin has granted CMap PIM SPFx Deployer access. Registry details:\n\n` +
-            `Tenant ID:       ${tenantId}\n` +
-            `Tenant domain:   ${domain}\n` +
-            `App catalog URL: ${siteUrl}\n\n` +
-            `Please enrol us for SPFx auto-deploys.\n`,
-        );
-        const subject = encodeURIComponent(
-          `CMap PIM SPFx Deployer onboarding — ${domain}`,
-        );
-        const mailto = `mailto:${ATVERO_EMAIL}?subject=${subject}&body=${body}`;
+          `Tenant ID:       ${tenantId}\n` +
+          `Tenant domain:   ${domain}\n` +
+          `App catalog URL: ${siteUrl}\n\n` +
+          `Please enrol us for SPFx auto-deploys.\n`;
+        const clipboardText =
+          `To: ${ATVERO_EMAIL}\n` +
+          `Subject: ${subject}\n\n` +
+          body;
 
         const panel = el("div", { class: "panel" }, [
           el("div", null, [
@@ -396,11 +396,15 @@
           ]),
         ]);
 
-        const emailLink = el(
-          "a",
-          { href: mailto },
-          [el("button", null, "Compose email to CMap PIM")],
-        );
+        const copyBtn = el("button", null, "Copy details to clipboard");
+        copyBtn.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(clipboardText);
+            copyBtn.textContent = "✅ Copied — now paste into an email";
+          } catch (e) {
+            copyBtn.textContent = "Copy failed — select and copy manually";
+          }
+        });
 
         replaceChildren(
           resultEl,
@@ -412,13 +416,13 @@
             " and on no other site.",
           ]),
           el("h2", null, "One last step"),
-          el(
-            "p",
-            null,
-            "Please email these details to CMap PIM so we can enrol you for automatic updates:",
-          ),
+          el("p", null, [
+            "Please copy the details below and email them to ",
+            el("strong", null, ATVERO_EMAIL),
+            " so we can enrol you for automatic updates:",
+          ]),
           panel,
-          el("p", null, [emailLink]),
+          el("p", null, [copyBtn]),
           el(
             "p",
             {
