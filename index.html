@@ -215,23 +215,107 @@
       const returningConsent =
         qs.get("admin_consent") === "True" && qs.get("tenant");
       const adminConsentError = qs.get("error");
+      const adminConsentErrorDesc = qs.get("error_description") || "";
       let consentedTenantId = null;
       let savedSiteUrl = null;
 
-      if (returningConsent) {
-        consentedTenantId = qs.get("tenant");
+      function recoverSiteFromState() {
         try {
           const state = JSON.parse(
             atob(decodeURIComponent(qs.get("state") || "")),
           );
-          savedSiteUrl = state?.site || "";
+          return state?.site || "";
         } catch {
-          savedSiteUrl = "";
+          return "";
         }
+      }
+
+      // AADSTS650051 is returned when the Deployer service principal already
+      // exists in the tenant — typically from a prior consent attempt that
+      // partially completed (SP created, consent grant not persisted) or
+      // because an admin pre-provisioned the SP out-of-band. We can't just
+      // skip step 1: step 2 creates a site permission record, but without
+      // the app permissions consented to the Deployer SP, it can't actually
+      // authenticate to use that record at runtime. So we show a remediation
+      // panel pointing the admin at Entra to grant consent manually, and
+      // offer a button to proceed once that's done — using the tenant GUID
+      // we extract from the error description.
+      const spAlreadyExists = /AADSTS650051/.test(adminConsentErrorDesc);
+      const tenantFromErrorMatch = adminConsentErrorDesc.match(
+        /for the tenant ([0-9a-f-]{36})/i,
+      );
+
+      if (returningConsent) {
+        consentedTenantId = qs.get("tenant");
+        savedSiteUrl = recoverSiteFromState();
         introEl.classList.add("hidden");
         stepTwoEl.classList.remove("hidden");
         document.getElementById("tenantOut").textContent = consentedTenantId;
         document.getElementById("siteOut").textContent = savedSiteUrl;
+      } else if (spAlreadyExists && tenantFromErrorMatch) {
+        const recoveredTenantId = tenantFromErrorMatch[1];
+        const recoveredSiteUrl = recoverSiteFromState();
+        introEl.classList.add("hidden");
+        resultEl.classList.remove("hidden");
+
+        const entraUrl =
+          `https://entra.microsoft.com/#view/Microsoft_AAD_IAM/ManagedAppMenuBlade/~/Permissions/objectId//appId/${DEPLOYER_APP_ID}`;
+
+        const continueBtn = el("button", null, "I've granted consent — continue to step 2");
+        continueBtn.addEventListener("click", () => {
+          consentedTenantId = recoveredTenantId;
+          savedSiteUrl = recoveredSiteUrl;
+          resultEl.classList.add("hidden");
+          stepTwoEl.classList.remove("hidden");
+          document.getElementById("tenantOut").textContent = consentedTenantId;
+          document.getElementById("siteOut").textContent = savedSiteUrl;
+        });
+
+        replaceChildren(
+          resultEl,
+          el("h2", { class: "err" }, "App already registered — consent needed"),
+          el("p", null, [
+            "The ",
+            el("strong", null, DEPLOYER_APP_NAME),
+            " app already exists in your tenant from a previous attempt, but admin consent for its permissions hasn't completed. Please grant consent manually in Entra, then return here.",
+          ]),
+          el("h2", null, "What to do"),
+          el("ol", null, [
+            el("li", null, [
+              "Open the app's permissions page in Entra: ",
+              el("a", { href: entraUrl, target: "_blank", rel: "noopener" }, "Open in Entra admin centre"),
+              ".",
+            ]),
+            el("li", null, [
+              "Click ",
+              el("strong", null, "Grant admin consent for <your tenant>"),
+              " and approve the requested permissions.",
+            ]),
+            el("li", null, "Come back to this page and click the button below."),
+          ]),
+          el("div", { class: "panel" }, [
+            el("div", null, [
+              el("strong", null, "Tenant: "),
+              el("code", null, recoveredTenantId),
+            ]),
+            el("div", null, [
+              el("strong", null, "Site: "),
+              el("code", null, recoveredSiteUrl || "(missing — please restart from step 1)"),
+            ]),
+          ]),
+          el("p", null, [continueBtn]),
+          el(
+            "p",
+            { class: "muted", style: "font-size: 0.85rem" },
+            [
+              "If the Entra link doesn't open the right page, search Enterprise applications for ",
+              el("code", null, DEPLOYER_APP_NAME),
+              " (or app ID ",
+              el("code", null, DEPLOYER_APP_ID),
+              ") and use its Permissions tab.",
+            ],
+          ),
+        );
       }
 
       function buildMsal(authority) {
@@ -510,10 +594,10 @@
         }
       });
 
-      if (adminConsentError) {
+      if (adminConsentError && !(spAlreadyExists && tenantFromErrorMatch)) {
         showError(
           "Admin consent was not completed.",
-          qs.get("error_description") || adminConsentError,
+          adminConsentErrorDesc || adminConsentError,
         );
       }
     </script>
